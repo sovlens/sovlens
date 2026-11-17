@@ -36,6 +36,7 @@ class Catalog:
         self.guide_source, self.guide_checked = guide["source"], guide["checked"]
         self.guide_available = {n for names in guide["services"].values() for n in names}
         self.guide_missing = dict(guide["not_listed"])
+        self.guide_notes = dict(guide.get("notes", {}))
         self.override_available: set[str] = set()
         self.override_unavailable: set[str] = set()
         if overrides_path and overrides_path.exists():
@@ -94,8 +95,9 @@ class Catalog:
         if namespace in self.guide_available:
             return f"Listed in the AWS European Sovereign Cloud User Guide (checked {self.guide_checked})"
         if namespace in self.guide_missing:
+            note = self.guide_notes.get(namespace, "Check AWS Capabilities by Region for the roadmap.")
             return (f"{self.guide_missing[namespace]} is not in the AWS European Sovereign Cloud User Guide "
-                    f"(checked {self.guide_checked}) or the SDK endpoint data. Check AWS Capabilities by Region for the roadmap")
+                    f"(checked {self.guide_checked}) or the SDK endpoint data. {note}")
         if namespace in GLOBAL_SERVICES:
             return "Global or edge service: check how it is offered in the target partition"
         if namespace in self._available:

@@ -8,8 +8,9 @@ from .deps import GROUPS, KINDS
 
 LABEL = {"ready": "Ready", "verify": "Verify", "wait": "Wait"}
 COLOR = {"ready": "#4ADE9B", "verify": "#F5C04A", "wait": "#FF8A80"}
-PRO_NOTE = ("Sovlens Pro lists every affected resource with a fix, and adds resource policies, "
-            "S3 replication, network links, Lambda layers and infrastructure-as-code checks: https://sovlens.dev")
+PRO_NOTE = ("Sovlens Pro lists every affected resource with a fix, names the vendor behind each outside account "
+            "with its ESC status, and adds resource policies, S3 replication, network links, Lambda layers and "
+            "infrastructure-as-code checks: https://sovlens.dev")
 
 
 def build(account_id, target, catalog, usage, deps_summary, warnings, edition="free", deps=None) -> dict:
@@ -70,7 +71,8 @@ def to_html(r: dict, deps_html: str | None = None) -> str:
                         ("outside_control", "Dependencies outside your control", "#AFC2FF")]
     )
     rows = "".join(
-        f"<tr><td><code>{e(s['service'])}</code></td><td>{s['resources']}</td><td>{e(', '.join(s['regions']))}</td>"
+        f"<tr><td style='white-space:nowrap'><code>{e(s['service'])}</code></td><td>{s['resources']}</td>"
+        f"<td>{'<br>'.join(f'<span style=white-space:nowrap>{e(r)}</span>' for r in s['regions'])}</td>"
         f"<td><span class='pill' style='color:{COLOR[s['status']]}'>{LABEL[s['status']]}</span></td><td>{e(s['reason'])}</td></tr>"
         for s in r["services"]
     ) or "<tr><td colspan='5'>No resources found.</td></tr>"
