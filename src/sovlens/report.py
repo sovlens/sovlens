@@ -1,0 +1,88 @@
+"""Turn scan results into JSON and a self-contained HTML report."""
+from __future__ import annotations
+
+import html
+from datetime import datetime, timezone
+
+LABEL = {"ready": "Ready", "verify": "Verify", "wait": "Wait"}
+COLOR = {"ready": "#4ADE9B", "verify": "#F5C04A", "wait": "#FF8A80"}
+FINDING = {"hardcoded_arn": "Hardcoded partition ARN", "cross_account_trust": "Cross-account trust"}
+PRO_NOTE = "Affected resources, examples and fixes are part of Sovlens Pro: https://sovlens.dev"
+
+
+def build(account_id, target, catalog, usage, findings_summary, warnings, edition="free", findings=None) -> dict:
+    services = []
+    for ns in sorted(usage):
+        services.append({
+            "service": ns,
+            "resources": usage[ns]["count"],
+            "regions": usage[ns]["regions"],
+            "status": catalog.status(ns),
+            "reason": catalog.reason(ns),
+        })
+    order = {"wait": 0, "verify": 1, "ready": 2}
+    services.sort(key=lambda s: (order[s["status"]], s["service"]))
+    summary = {k: sum(1 for s in services if s["status"] == k) for k in ("ready", "verify", "wait")}
+    summary["needs_changes"] = sum(f["resources"] for f in findings_summary)
+    result = {
+        "tool": "sovlens",
+        "edition": edition,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "account_id": account_id,
+        "target_region": target,
+        "catalog_source": f"botocore {catalog.botocore_version} endpoint data + overrides",
+        "summary": summary,
+        "services": services,
+        "findings_summary": findings_summary,
+        "warnings": warnings,
+        "disclaimer": "Technical readiness only. Not legal or compliance advice. Verify 'Verify' items against AWS Capabilities by Region.",
+    }
+    if findings is not None:
+        result["findings"] = findings
+    return result
+
+
+def findings_section(r: dict) -> str:
+    """Free edition: counts per type. Sovlens Pro replaces this section."""
+    e = html.escape
+    rows = "".join(
+        f"<tr><td>{e(FINDING.get(f['type'], f['type']))}</td><td>{f['resources']}</td><td>{f['occurrences']}</td></tr>"
+        for f in r["findings_summary"]
+    ) or "<tr><td colspan='3'>Nothing found.</td></tr>"
+    note = f"<p class='meta' style='margin-top:10px'>{e(PRO_NOTE)}</p>" if r["findings_summary"] else ""
+    return ("<h2>IAM items that need changes</h2><div class='wrap'><table>"
+            "<tr><th>Type</th><th>Affected policies or roles</th><th>Occurrences</th></tr>"
+            f"{rows}</table></div>{note}")
+
+
+def to_html(r: dict, findings_html: str | None = None) -> str:
+    e = html.escape
+    tiles = "".join(
+        f"<div class='tile'><b style='color:{c}'>{r['summary'][k]}</b><span>{e(t)}</span></div>"
+        for k, t, c in [("ready", "Services ready", COLOR["ready"]), ("verify", "To verify", COLOR["verify"]),
+                        ("wait", "Must wait", COLOR["wait"]), ("needs_changes", "IAM items to change", "#AFC2FF")]
+    )
+    rows = "".join(
+        f"<tr><td><code>{e(s['service'])}</code></td><td>{s['resources']}</td><td>{e(', '.join(s['regions']))}</td>"
+        f"<td><span class='pill' style='color:{COLOR[s['status']]}'>{LABEL[s['status']]}</span></td><td>{e(s['reason'])}</td></tr>"
+        for s in r["services"]
+    ) or "<tr><td colspan='5'>No resources found.</td></tr>"
+    warn = "".join(f"<li>{e(w)}</li>" for w in r["warnings"]) or "<li>None</li>"
+    findings = findings_html if findings_html is not None else findings_section(r)
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Sovlens report {e(r['account_id'])}</title>
+<style>body{{margin:0;background:#0E1116;color:#E8EAF0;font:15px/1.55 system-ui,sans-serif}}
+main{{max-width:1100px;margin:0 auto;padding:40px 20px}}h1{{font-size:28px;margin:0 0 4px}}h2{{font-size:19px;margin:36px 0 12px}}
+p.meta{{color:#9AA3B2;margin:0 0 24px}}.tiles{{display:flex;flex-wrap:wrap;gap:12px}}
+.tile{{flex:1 1 160px;background:#151A22;border:1px solid #262D3A;border-radius:12px;padding:14px 16px}}
+.tile b{{display:block;font-size:30px;line-height:1.1}}.tile span{{color:#B4BCCA;font-size:13px}}
+.wrap{{overflow-x:auto;border:1px solid #262D3A;border-radius:12px}}table{{border-collapse:collapse;width:100%;min-width:720px}}
+th,td{{text-align:left;padding:10px 12px;border-bottom:1px solid #222937;vertical-align:top}}th{{color:#9AA3B2;font-size:12px;text-transform:uppercase;letter-spacing:.05em}}
+code{{font:13px ui-monospace,monospace;word-break:break-all}}.pill{{font-weight:600}}li{{color:#B4BCCA}}footer{{color:#8A93A3;font-size:13px;margin-top:32px}}</style></head>
+<body><main><h1>ESC readiness report</h1>
+<p class="meta">Account {e(r['account_id'])} &rarr; {e(r['target_region'])} &middot; {e(r['generated_at'])} &middot; {e(r['catalog_source'])}</p>
+<div class="tiles">{tiles}</div>
+<h2>Services in use</h2><div class="wrap"><table><tr><th>Service</th><th>Resources</th><th>Regions</th><th>Status</th><th>Why</th></tr>{rows}</table></div>
+{findings}
+<h2>Scan warnings</h2><ul>{warn}</ul>
+<footer>{e(r['disclaimer'])} Sovlens is not affiliated with Amazon Web Services.</footer></main></body></html>"""

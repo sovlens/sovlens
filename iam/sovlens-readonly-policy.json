@@ -1,0 +1,32 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SovlensReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity",
+        "ec2:DescribeRegions",
+        "ec2:DescribeInstances",
+        "tag:GetResources",
+        "iam:ListPolicies",
+        "iam:GetPolicyVersion",
+        "iam:ListRoles",
+        "iam:ListRolePolicies",
+        "iam:GetRolePolicy",
+        "s3:ListAllMyBuckets",
+        "lambda:ListFunctions",
+        "rds:DescribeDBInstances",
+        "dynamodb:ListTables",
+        "ecs:ListClusters",
+        "eks:ListClusters",
+        "sqs:ListQueues",
+        "sns:ListTopics",
+        "ecr:DescribeRepositories",
+        "cloudfront:ListDistributions",
+        "route53:ListHostedZones"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

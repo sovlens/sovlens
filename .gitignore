@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+.DS_Store
+# Scan output can contain account IDs and resource names
+sovlens-report.*
+*.report.json

@@ -1,0 +1,5 @@
+{
+  "_comment": "Manual corrections on top of the botocore endpoint data. Keys are ARN service namespaces (e.g. 'codebuild'). Add an entry only with a source you can cite.",
+  "available": [],
+  "unavailable": []
+}
