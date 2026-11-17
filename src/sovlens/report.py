@@ -4,15 +4,20 @@ from __future__ import annotations
 import html
 from datetime import datetime, timezone
 
+from .deps import GROUPS, KINDS
+
 LABEL = {"ready": "Ready", "verify": "Verify", "wait": "Wait"}
 COLOR = {"ready": "#4ADE9B", "verify": "#F5C04A", "wait": "#FF8A80"}
-FINDING = {"hardcoded_arn": "Hardcoded partition ARN", "cross_account_trust": "Cross-account trust"}
-PRO_NOTE = "Affected resources, examples and fixes are part of Sovlens Pro: https://sovlens.dev"
+PRO_NOTE = ("Sovlens Pro lists every affected resource with a fix, and adds resource policies, "
+            "S3 replication, network links, Lambda layers and infrastructure-as-code checks: https://sovlens.dev")
 
 
-def build(account_id, target, catalog, usage, findings_summary, warnings, edition="free", findings=None) -> dict:
-    services = []
+def build(account_id, target, catalog, usage, deps_summary, warnings, edition="free", deps=None) -> dict:
+    services, unknown = [], []
     for ns in sorted(usage):
+        if not catalog.known(ns):
+            unknown.append({"namespace": ns, "resources": usage[ns]["count"], "regions": usage[ns]["regions"]})
+            continue
         services.append({
             "service": ns,
             "resources": usage[ns]["count"],
@@ -23,7 +28,8 @@ def build(account_id, target, catalog, usage, findings_summary, warnings, editio
     order = {"wait": 0, "verify": 1, "ready": 2}
     services.sort(key=lambda s: (order[s["status"]], s["service"]))
     summary = {k: sum(1 for s in services if s["status"] == k) for k in ("ready", "verify", "wait")}
-    summary["needs_changes"] = sum(f["resources"] for f in findings_summary)
+    summary["dependencies"] = sum(d["count"] for d in deps_summary)
+    summary["outside_control"] = sum(d["count"] for d in deps_summary if d["group"] == "outside_control")
     result = {
         "tool": "sovlens",
         "edition": edition,
@@ -33,42 +39,47 @@ def build(account_id, target, catalog, usage, findings_summary, warnings, editio
         "catalog_source": f"botocore {catalog.botocore_version} endpoint data + overrides",
         "summary": summary,
         "services": services,
-        "findings_summary": findings_summary,
+        "unrecognised": unknown,
+        "dependencies_summary": deps_summary,
         "warnings": warnings,
         "disclaimer": "Technical readiness only. Not legal or compliance advice. Verify 'Verify' items against AWS Capabilities by Region.",
     }
-    if findings is not None:
-        result["findings"] = findings
+    if deps is not None:
+        result["dependencies"] = deps
     return result
 
 
-def findings_section(r: dict) -> str:
-    """Free edition: counts per type. Sovlens Pro replaces this section."""
+def dependencies_section(r: dict) -> str:
+    """Free edition: counts per kind. Sovlens Pro replaces this section."""
     e = html.escape
     rows = "".join(
-        f"<tr><td>{e(FINDING.get(f['type'], f['type']))}</td><td>{f['resources']}</td><td>{f['occurrences']}</td></tr>"
-        for f in r["findings_summary"]
+        f"<tr><td>{e(GROUPS[d['group']])}</td><td>{e(KINDS[d['kind']][1])}</td><td>{d['count']}</td></tr>"
+        for d in r["dependencies_summary"]
     ) or "<tr><td colspan='3'>Nothing found.</td></tr>"
-    note = f"<p class='meta' style='margin-top:10px'>{e(PRO_NOTE)}</p>" if r["findings_summary"] else ""
-    return ("<h2>IAM items that need changes</h2><div class='wrap'><table>"
-            "<tr><th>Type</th><th>Affected policies or roles</th><th>Occurrences</th></tr>"
-            f"{rows}</table></div>{note}")
+    return ("<h2>Cross-partition dependencies</h2><div class='wrap'><table>"
+            "<tr><th>Group</th><th>What</th><th>Count</th></tr>"
+            f"{rows}</table></div><p class='meta' style='margin-top:10px'>{e(PRO_NOTE)}</p>")
 
 
-def to_html(r: dict, findings_html: str | None = None) -> str:
+def to_html(r: dict, deps_html: str | None = None) -> str:
     e = html.escape
     tiles = "".join(
         f"<div class='tile'><b style='color:{c}'>{r['summary'][k]}</b><span>{e(t)}</span></div>"
         for k, t, c in [("ready", "Services ready", COLOR["ready"]), ("verify", "To verify", COLOR["verify"]),
-                        ("wait", "Must wait", COLOR["wait"]), ("needs_changes", "IAM items to change", "#AFC2FF")]
+                        ("wait", "Must wait", COLOR["wait"]),
+                        ("outside_control", "Dependencies outside your control", "#AFC2FF")]
     )
     rows = "".join(
         f"<tr><td><code>{e(s['service'])}</code></td><td>{s['resources']}</td><td>{e(', '.join(s['regions']))}</td>"
         f"<td><span class='pill' style='color:{COLOR[s['status']]}'>{LABEL[s['status']]}</span></td><td>{e(s['reason'])}</td></tr>"
         for s in r["services"]
     ) or "<tr><td colspan='5'>No resources found.</td></tr>"
+    unknown = ""
+    if r["unrecognised"]:
+        items = ", ".join(f"<code>{e(u['namespace'])}</code> ({u['resources']})" for u in r["unrecognised"])
+        unknown = f"<p class='meta' style='margin-top:10px'>Other tagged resource types, not assessed: {items}</p>"
     warn = "".join(f"<li>{e(w)}</li>" for w in r["warnings"]) or "<li>None</li>"
-    findings = findings_html if findings_html is not None else findings_section(r)
+    deps = deps_html if deps_html is not None else dependencies_section(r)
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Sovlens report {e(r['account_id'])}</title>
 <style>body{{margin:0;background:#0E1116;color:#E8EAF0;font:15px/1.55 system-ui,sans-serif}}
@@ -83,6 +94,7 @@ code{{font:13px ui-monospace,monospace;word-break:break-all}}.pill{{font-weight:
 <p class="meta">Account {e(r['account_id'])} &rarr; {e(r['target_region'])} &middot; {e(r['generated_at'])} &middot; {e(r['catalog_source'])}</p>
 <div class="tiles">{tiles}</div>
 <h2>Services in use</h2><div class="wrap"><table><tr><th>Service</th><th>Resources</th><th>Regions</th><th>Status</th><th>Why</th></tr>{rows}</table></div>
-{findings}
+{unknown}
+{deps}
 <h2>Scan warnings</h2><ul>{warn}</ul>
 <footer>{e(r['disclaimer'])} Sovlens is not affiliated with Amazon Web Services.</footer></main></body></html>"""

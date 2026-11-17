@@ -2,19 +2,19 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "SovlensReadOnly",
+      "Sid": "SovlensFree",
       "Effect": "Allow",
       "Action": [
         "sts:GetCallerIdentity",
         "ec2:DescribeRegions",
-        "ec2:DescribeInstances",
         "tag:GetResources",
-        "iam:ListPolicies",
-        "iam:GetPolicyVersion",
+        "organizations:DescribeOrganization",
+        "organizations:ListAccounts",
         "iam:ListRoles",
-        "iam:ListRolePolicies",
-        "iam:GetRolePolicy",
+        "iam:ListSAMLProviders",
+        "iam:ListOpenIDConnectProviders",
         "s3:ListAllMyBuckets",
+        "s3:GetBucketLocation",
         "lambda:ListFunctions",
         "rds:DescribeDBInstances",
         "dynamodb:ListTables",
@@ -25,6 +25,24 @@
         "ecr:DescribeRepositories",
         "cloudfront:ListDistributions",
         "route53:ListHostedZones"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SovlensProOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketPolicy",
+        "s3:GetReplicationConfiguration",
+        "kms:ListKeys",
+        "kms:DescribeKey",
+        "kms:GetKeyPolicy",
+        "sqs:GetQueueAttributes",
+        "sns:GetTopicAttributes",
+        "ec2:DescribeVpcPeeringConnections",
+        "ec2:DescribeTransitGatewayAttachments",
+        "ec2:DescribeVpnConnections",
+        "directconnect:DescribeConnections"
       ],
       "Resource": "*"
     }

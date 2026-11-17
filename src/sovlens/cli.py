@@ -7,10 +7,10 @@ import sys
 from pathlib import Path
 
 import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 
-from . import __version__, arnscan, inventory, report
+from . import __version__, deps, inventory, report
 from .catalog import Catalog
-
 
 try:  # Sovlens Pro is a separate, licensed package
     import sovlens_pro as _pro
@@ -18,14 +18,15 @@ except ImportError:
     _pro = None
 
 
-def run_scan(session, target: str, regions: list[str] | None, overrides: Path | None) -> dict:
+def run_scan(session, target: str, regions: list[str] | None, overrides: Path | None,
+             iac: Path | None = None) -> dict:
     account_id = session.client("sts").get_caller_identity()["Account"]
     regions = regions or inventory.enabled_regions(session)
     catalog = Catalog(target, overrides)
     usage, w1 = inventory.collect(session, regions)
     if _pro is not None:
-        return _pro.run(session, account_id, target, catalog, usage, w1)
-    summary, w2 = arnscan.scan(session, account_id)
+        return _pro.run(session, account_id, target, catalog, usage, w1, regions=regions, iac=iac)
+    summary, w2, _org = deps.scan(session, account_id)
     return report.build(account_id, target, catalog, usage, summary, w1 + w2)
 
 
@@ -37,14 +38,31 @@ def main(argv: list[str] | None = None) -> int:
     scan.add_argument("--profile", help="AWS CLI profile to use")
     scan.add_argument("--regions", help="comma-separated regions to scan (default: all enabled)")
     scan.add_argument("--target", default="eusc-de-east-1", help="target ESC region")
+    scan.add_argument("--iac", help="folder with Terraform or CloudFormation code to check (Sovlens Pro)")
     scan.add_argument("--report", choices=["html", "json", "both"], default="both")
     scan.add_argument("--out", default="sovlens-report", help="output file name without extension")
     scan.add_argument("--overrides", default="catalog/overrides.json", help="catalog overrides file")
     args = parser.parse_args(argv)
 
-    session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
-    regions = [r.strip() for r in args.regions.split(",")] if args.regions else None
-    result = run_scan(session, args.target, regions, Path(args.overrides))
+    iac = Path(args.iac) if args.iac else None
+    if iac is not None and _pro is None:
+        print("Note: --iac is part of Sovlens Pro (https://sovlens.dev). Skipping the code check.")
+        iac = None
+    elif iac is not None and not iac.is_dir():
+        print(f"Error: --iac folder not found: {iac}", file=sys.stderr)
+        return 2
+
+    try:
+        session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
+        regions = [r.strip() for r in args.regions.split(",")] if args.regions else None
+        result = run_scan(session, args.target, regions, Path(args.overrides), iac)
+    except BotoCoreError as exc:
+        print(f"Error: could not use your AWS credentials: {exc}", file=sys.stderr)
+        print("If you signed in with 'aws login', run: pip install \"botocore[crt]\"", file=sys.stderr)
+        return 1
+    except ClientError as exc:
+        print(f"Error: AWS rejected the request: {exc}", file=sys.stderr)
+        return 1
 
     written = []
     if args.report in ("json", "both"):
@@ -57,14 +75,15 @@ def main(argv: list[str] | None = None) -> int:
 
     s = result["summary"]
     print(f"Account {result['account_id']} -> {result['target_region']}")
-    print(f"  Services ready:      {s['ready']}")
-    print(f"  To verify:           {s['verify']}")
-    print(f"  Must wait:           {s['wait']}")
-    print(f"  IAM items to change: {s['needs_changes']}")
+    print(f"  Services ready:                    {s['ready']}")
+    print(f"  To verify:                         {s['verify']}")
+    print(f"  Must wait:                         {s['wait']}")
+    print(f"  Dependencies outside your control: {s['outside_control']}")
+    print(f"  All cross-partition dependencies:  {s['dependencies']}")
     if result["warnings"]:
-        print(f"  Warnings:            {len(result['warnings'])} (see report)")
-    if s["needs_changes"] and _pro is None:
-        print("  " + report.PRO_NOTE)
+        print(f"  Warnings:                          {len(result['warnings'])} (see report)")
+    if _pro is None:
+        print("  Sovlens Pro lists each one with a fix: https://sovlens.dev")
     print("Report: " + ", ".join(written))
     return 0
 

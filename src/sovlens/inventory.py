@@ -7,7 +7,6 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 # (client name, ARN namespace, paginator/operation, result key, global?)
 PROBES = [
-    ("s3", "s3", "list_buckets", "Buckets", True),
     ("cloudfront", "cloudfront", "list_distributions", "DistributionList.Items", True),
     ("route53", "route53", "list_hosted_zones", "HostedZones", True),
     ("lambda", "lambda", "list_functions", "Functions", False),
@@ -73,6 +72,23 @@ def collect(session, regions: list[str]) -> tuple[dict, list[str]]:
                 label = "global" if is_global else region
                 seen_probe[ns] += n
                 usage[ns]["regions"].add(label)
+    # S3 buckets are regional even though the API is global.
+    try:
+        s3 = session.client("s3")
+        buckets = [b for page in s3.get_paginator("list_buckets").paginate() for b in page.get("Buckets", [])]
+        for b in buckets:
+            region = b.get("BucketRegion")
+            if not region:
+                try:
+                    region = s3.get_bucket_location(Bucket=b["Name"]).get("LocationConstraint") or "us-east-1"
+                except (ClientError, BotoCoreError):
+                    region = "unknown"
+            usage["s3"]["regions"].add(region)
+        if buckets:
+            seen_probe["s3"] = len(buckets)
+    except (ClientError, BotoCoreError) as exc:
+        warnings.append(f"s3:list_buckets skipped: {type(exc).__name__}")
+
     # Probes are exact counts; prefer them over tag-based counts for the same service.
     for ns, n in seen_probe.items():
         usage[ns]["count"] = max(usage[ns]["count"], n)

@@ -56,6 +56,10 @@ class Catalog:
             if self.target_region in regions:
                 self._available |= names
 
+    def known(self, namespace: str) -> bool:
+        return (namespace in self._known or namespace in GLOBAL_SERVICES
+                or namespace in self.override_available or namespace in self.override_unavailable)
+
     def status(self, namespace: str) -> str:
         """Return 'ready', 'wait' or 'verify' for an ARN service namespace."""
         if namespace in self.override_unavailable:
