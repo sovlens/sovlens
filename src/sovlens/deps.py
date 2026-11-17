@@ -16,6 +16,8 @@ import re
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from . import runner
+
 ACCOUNT_RE = re.compile(r"(?<!\d)(\d{12})(?!\d)")
 
 # Groups shown in reports, in this order.
@@ -56,13 +58,13 @@ class OrgContext:
         self.complete = True
         self.warnings: list[str] = []
         try:
-            org = session.client("organizations").describe_organization()["Organization"]
+            org = runner.client(session, "organizations").describe_organization()["Organization"]
             self.in_org = True
             self.accounts.add(org["MasterAccountId"])
         except (ClientError, BotoCoreError):
             return
         try:
-            client = session.client("organizations")
+            client = runner.client(session, "organizations")
             for page in client.get_paginator("list_accounts").paginate():
                 self.accounts |= {a["Id"] for a in page["Accounts"]}
         except (ClientError, BotoCoreError):
@@ -106,7 +108,7 @@ def role_trust_findings(session, org: OrgContext) -> tuple[list[dict], list[str]
     findings: list[dict] = []
     warnings: list[str] = []
     try:
-        iam = session.client("iam")
+        iam = runner.client(session, "iam")
         for page in iam.get_paginator("list_roles").paginate():
             for role in page["Roles"]:
                 if role.get("Path", "").startswith("/aws-service-role/"):
@@ -138,7 +140,7 @@ def identity_findings(session, org: OrgContext) -> tuple[list[dict], list[str]]:
         findings.append({"kind": "org_membership", "resource": "account",
                          "detail": "member of an AWS Organization"})
     try:
-        iam = session.client("iam")
+        iam = runner.client(session, "iam")
         for p in iam.list_saml_providers().get("SAMLProviderList", []):
             findings.append({"kind": "identity_provider", "resource": p["Arn"].split(":", 5)[-1],
                              "detail": "SAML provider"})
@@ -162,6 +164,7 @@ def summarize(findings: list[dict]) -> list[dict]:
 
 def scan(session, account_id: str) -> tuple[list[dict], list[str], OrgContext]:
     """Free edition: counts of role trust and identity dependencies."""
+    runner.say("Dependencies: organization, roles and identity providers")
     org = OrgContext(session, account_id)
     trust, w1 = role_trust_findings(session, org)
     ident, w2 = identity_findings(session, org)

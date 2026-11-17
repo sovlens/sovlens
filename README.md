@@ -26,7 +26,7 @@ sovlens scan --profile my-profile
 open sovlens-report.html
 ```
 
-Options: `--regions eu-central-1,eu-west-1`, `--target eusc-de-east-1`, `--report html|json|both`, `--out name`.
+Options: `--regions eu-central-1,eu-west-1`, `--target eusc-de-east-1`, `--report html|json|both`, `--out name`, `--quiet` (no progress output). Regions are scanned in parallel; a full scan of all enabled regions usually takes a few minutes.
 
 ## Permissions
 

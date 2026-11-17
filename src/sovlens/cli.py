@@ -9,7 +9,7 @@ from pathlib import Path
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from . import __version__, deps, inventory, report
+from . import __version__, deps, inventory, report, runner
 from .catalog import Catalog
 
 try:  # Sovlens Pro is a separate, licensed package
@@ -20,8 +20,10 @@ except ImportError:
 
 def run_scan(session, target: str, regions: list[str] | None, overrides: Path | None,
              iac: Path | None = None) -> dict:
-    account_id = session.client("sts").get_caller_identity()["Account"]
+    runner.say("Checking credentials")
+    account_id = runner.client(session, "sts").get_caller_identity()["Account"]
     regions = regions or inventory.enabled_regions(session)
+    runner.say(f"Account {account_id}, {len(regions)} regions")
     catalog = Catalog(target, overrides)
     usage, w1 = inventory.collect(session, regions)
     if _pro is not None:
@@ -41,9 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     scan.add_argument("--iac", help="folder with Terraform or CloudFormation code to check (Sovlens Pro)")
     scan.add_argument("--report", choices=["html", "json", "both"], default="both")
     scan.add_argument("--out", default="sovlens-report", help="output file name without extension")
+    scan.add_argument("--quiet", action="store_true", help="no progress output")
     scan.add_argument("--overrides", default="catalog/overrides.json", help="catalog overrides file")
     args = parser.parse_args(argv)
 
+    runner.set_quiet(args.quiet)
     iac = Path(args.iac) if args.iac else None
     if iac is not None and _pro is None:
         print("Note: --iac is part of Sovlens Pro (https://sovlens.dev). Skipping the code check.")
@@ -64,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: AWS rejected the request: {exc}", file=sys.stderr)
         return 1
 
+    runner.say("Writing report")
     written = []
     if args.report in ("json", "both"):
         Path(f"{args.out}.json").write_text(json.dumps(result, indent=2))
