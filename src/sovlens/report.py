@@ -36,7 +36,7 @@ def build(account_id, target, catalog, usage, deps_summary, warnings, edition="f
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "account_id": account_id,
         "target_region": target,
-        "catalog_source": f"botocore {catalog.botocore_version} endpoint data + overrides",
+        "catalog_source": f"ESC User Guide ({catalog.guide_checked}) + botocore {catalog.botocore_version} endpoint data + overrides",
         "summary": summary,
         "services": services,
         "unrecognised": unknown,

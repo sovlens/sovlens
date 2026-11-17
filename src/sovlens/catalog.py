@@ -1,8 +1,12 @@
 """Which services exist in the target partition.
 
-Source of truth for v0.1: the endpoint data shipped with botocore, plus manual
-overrides. botocore's data can lag behind real launches, so a service that is
-not listed is reported as "verify", never as a hard "no".
+Sources, in order:
+1. Manual overrides (catalog/overrides.json).
+2. The service list of the AWS European Sovereign Cloud User Guide (catalog/esc_services.json).
+   Widely used services that the guide does not cover are reported as "wait".
+3. The endpoint data shipped with botocore. It misses partition-wide services such as IAM,
+   Organizations and Route 53, so it is only a fallback.
+Anything else is reported as "verify", never as a hard "no".
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ TARGET_PARTITION = "aws-eusc"
 # Services that are operated outside a single regional endpoint in the
 # commercial partition. Their presence always deserves a manual look.
 GLOBAL_SERVICES = {"cloudfront", "route53", "globalaccelerator", "shield", "waf"}
+ESC_SERVICES = Path(__file__).resolve().parent / "data" / "esc_services.json"
 
 
 class Catalog:
@@ -27,6 +32,10 @@ class Catalog:
         self._available: set[str] = set()
         self._known: set[str] = set()
         self._build()
+        guide = json.loads(ESC_SERVICES.read_text())
+        self.guide_source, self.guide_checked = guide["source"], guide["checked"]
+        self.guide_available = {n for names in guide["services"].values() for n in names}
+        self.guide_missing = dict(guide["not_listed"])
         self.override_available: set[str] = set()
         self.override_unavailable: set[str] = set()
         if overrides_path and overrides_path.exists():
@@ -58,6 +67,7 @@ class Catalog:
 
     def known(self, namespace: str) -> bool:
         return (namespace in self._known or namespace in GLOBAL_SERVICES
+                or namespace in self.guide_available or namespace in self.guide_missing
                 or namespace in self.override_available or namespace in self.override_unavailable)
 
     def status(self, namespace: str) -> str:
@@ -66,6 +76,10 @@ class Catalog:
             return "wait"
         if namespace in self.override_available:
             return "ready"
+        if namespace in self.guide_available:
+            return "ready"
+        if namespace in self.guide_missing:
+            return "wait"
         if namespace in GLOBAL_SERVICES:
             return "verify"
         if namespace in self._available:
@@ -77,6 +91,11 @@ class Catalog:
             return "Marked unavailable in catalog overrides"
         if namespace in self.override_available:
             return "Marked available in catalog overrides"
+        if namespace in self.guide_available:
+            return f"Listed in the AWS European Sovereign Cloud User Guide (checked {self.guide_checked})"
+        if namespace in self.guide_missing:
+            return (f"{self.guide_missing[namespace]} is not in the AWS European Sovereign Cloud User Guide "
+                    f"(checked {self.guide_checked}) or the SDK endpoint data. Check AWS Capabilities by Region for the roadmap")
         if namespace in GLOBAL_SERVICES:
             return "Global or edge service: check how it is offered in the target partition"
         if namespace in self._available:

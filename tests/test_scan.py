@@ -20,7 +20,10 @@ def creds(monkeypatch):
 def test_catalog_knows_core_services():
     cat = Catalog("eusc-de-east-1")
     assert cat.status("s3") == "ready"
-    assert cat.status("cloudfront") == "verify"
+    # Listed in the ESC User Guide but missing from botocore endpoint data.
+    assert cat.status("route53") == "ready" and cat.status("organizations") == "ready"
+    assert cat.status("cloudfront") == "wait" and "User Guide" in cat.reason("cloudfront")
+    assert cat.status("globalaccelerator") == "wait"
     assert not cat.known("definitely-not-a-service")
 
 

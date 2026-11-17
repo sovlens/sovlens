@@ -42,7 +42,7 @@ Read-only. The minimal policy is in `iam/sovlens-readonly-policy.json`. `ReadOnl
 
 Dependencies are grouped as **Outside your control** (a vendor or another company must act), **Rebuild in the sovereign cloud** (you recreate it in ESC) and **Code to change** (Pro, from your Terraform or CloudFormation files).
 
-The service catalog comes from the endpoint data shipped with botocore, so keep boto3 up to date. botocore can lag behind launches, which is why a missing service is "Verify", not "Wait". Add confirmed corrections to `catalog/overrides.json`.
+The service catalog comes from the service list in the [AWS European Sovereign Cloud User Guide](https://docs.aws.eu/esc/latest/userguide/services.html) (`src/sovlens/data/esc_services.json`, with the date it was checked). Widely used services the guide does not cover, such as CloudFront, are "Wait". The endpoint data shipped with botocore is a fallback only: it has no entry for partition-wide services such as IAM, Organizations and Route 53. Anything not covered by either is "Verify", never "Wait". Add confirmed corrections to `catalog/overrides.json`.
 
 ## Free and Pro
 
